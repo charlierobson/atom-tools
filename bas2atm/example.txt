@@ -1,0 +1,6 @@
+p."hello"
+g.^a
+~~ the next line won't be executed
+fred!
+^a p." world!"'
+END
