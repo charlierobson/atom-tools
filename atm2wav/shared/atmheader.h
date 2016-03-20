@@ -32,7 +32,7 @@ public:
 		ATMHEADER* atm = (ATMHEADER*)data;
 
 		header.exec = atm->exec;
-		memcpy_s(&header.filename, 16, atm->filename, 16);
+		memcpy(&header.filename, atm->filename, 16);
 		header.length = atm->length;
 		header.start = atm->start;
 

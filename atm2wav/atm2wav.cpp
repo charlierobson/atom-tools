@@ -37,10 +37,11 @@ http://www.stairwaytohell.com/atom/wouterras/romdisas.zip
 #include <string>
 #include <sstream>
 #include <vector>
+#include <unistd.h>
 
-#include "shared\argcrack.h"
-#include "shared\defines.h"
-#include "shared\atmheader.h"
+#include "shared/argcrack.h"
+#include "shared/defines.h"
+#include "shared/atmheader.h"
 
 #include <math.h>
 #ifndef PI
@@ -59,7 +60,7 @@ public:
 		and a logic 1 consists of 8 cycles of a 2.4 kHz tone.
 
 		Each byte of data is preceeded by a logic zero start bit,
-		and is terminated by a logic 1 stop bit. 
+		and is terminated by a logic 1 stop bit.
 	*/
 
 	// 1 cycle of 1200hz = 36.75 samples @ 44100hz
@@ -72,7 +73,7 @@ public:
 	//
 	inline BYTE _BV(int x) const
 	{
-		return BYTE(1 << x);
+		return (BYTE)(1 << x);
 	}
 
 	freqout(BYTE* rawdata, std::ofstream& out) :
@@ -174,7 +175,7 @@ public:
 		int blockLoadAddr = atm.header.start;
 
 		// Bit 7 = last block. Clear = last block.
-		// Bit 6 = do load me. Set = load. Clear = don't. 
+		// Bit 6 = do load me. Set = load. Clear = don't.
 		// Bit 5 = first block. Clear = first block.
 		//
 		BYTE flags = _BV(7) | _BV(6);
@@ -491,7 +492,7 @@ int main(int argc, char** argv)
 	if (!written)
 	{
 		std::cout << "Failed to write WAV." << std::endl;
-		_unlink(outName.c_str());
+		unlink(outName.c_str());
 		return 1;
 	}
 
