@@ -1,13 +1,7 @@
 #ifndef __argcrack_h
 #define __argcrack_h
 
-#ifndef strnicmp
-#define strnicmp strncasecmp
-#endif
-
-#ifndef stricmp
-#define sticmp strcasecmp
-#endif
+#include <string.h>
 
 class argcrack
 {
@@ -24,7 +18,7 @@ public:
 		  {
 			  for(int i = 1; i < m_argc; ++i)
 			  {
-				  if (strnicmp(pname,m_argv[i],strlen(pname)) == 0)
+				  if (_strnicmp(pname,m_argv[i],strlen(pname)) == 0)
 				  {
 					  const char* val = &m_argv[i][strlen(pname)+1];
 
@@ -55,7 +49,7 @@ public:
 		  {
 			  for(int i = 1; i < m_argc; ++i)
 			  {
-				  if (strnicmp(pname,m_argv[i],strlen(pname)) == 0)
+				  if (_strnicmp(pname,m_argv[i],strlen(pname)) == 0)
 				  {
 					  target = &m_argv[i][strlen(pname)+1];
 					  return true;
@@ -76,7 +70,7 @@ public:
 		  {
 			  for(int i = 1; i < m_argc; ++i)
 			  {
-				  if (strnicmp(pname,m_argv[i],strlen(pname)) == 0)
+				  if (_strnicmp(pname,m_argv[i],strlen(pname)) == 0)
 				  {
 					  return true;
 				  }
