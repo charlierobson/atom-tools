@@ -37,7 +37,6 @@ http://www.stairwaytohell.com/atom/wouterras/romdisas.zip
 #include <string>
 #include <sstream>
 #include <vector>
-#include <unistd.h>
 
 #include "shared/argcrack.h"
 #include "shared/defines.h"
@@ -48,12 +47,11 @@ http://www.stairwaytohell.com/atom/wouterras/romdisas.zip
 #define PI 3.14159265358979323846
 #endif
 
-#define VERSION "1.1.0"
+#define VSNSTR "1.2.0"
 
 class freqout
 {
 public:
-
 	/* From some old text or other (ATAP probably):
 
 		A logic 0 consists of 4 cycles of a 1.2 kHz tone,
@@ -77,9 +75,9 @@ public:
 	}
 
 	freqout(BYTE* rawdata, std::ofstream& out) :
-		m_rawdata(rawdata),
-		m_out(out),
-		m_writtenSampleCount(0)
+		_rawData(rawdata),
+		_out(out),
+		_writtenSampleCount(0)
 	{
 		// Build the output table. 4 cycles into 147 bytes.
 		//
@@ -102,41 +100,44 @@ public:
 				s = 16384;
 			}
 
-			m_sine[i] = short(s);
+			_sine[i] = short(s);
 			val += step;
 		}
+
+		_is8bit = false;
+		BITSPERSAMPLE = 16;
 	}
 
 	// Output a 1 bit, 8 cycles of 24khz
 	//
-	void out1(void)
+	virtual void out1(void)
 	{
 		for (int i = 0; i < 147; ++i)
 		{
 			// Double step the table for a higher frequency
 			//
-			short val = m_sine[(i * 2) % 147];
+			short val = _sine[(i * 2) % 147];
 			BYTE lo = (val >> 8) & 255;
 			BYTE hi = val & 255;
-			m_out.put(hi);
-			m_out.put(lo);
+			_out.put(hi);
+			_out.put(lo);
 		}
-		m_writtenSampleCount += 147;
+		_writtenSampleCount += 147;
 	}
 
 	// Output a 0 bit, 4 cycles of 12khz
 	//
-	void out0(void)
+	virtual void out0(void)
 	{
 		for (int i = 0; i < 147; ++i)
 		{
-			short val = m_sine[i];
+			short val = _sine[i];
 			BYTE lo = (val >> 8) & 255;
 			BYTE hi = val & 255;
-			m_out.put(hi);
-			m_out.put(lo);
+			_out.put(hi);
+			_out.put(lo);
 		}
-		m_writtenSampleCount += 147;
+		_writtenSampleCount += 147;
 	}
 
 	// Output a byte plus its surrounding start & stop bit.
@@ -158,7 +159,7 @@ public:
 		}
 		out1();
 
-		m_checksum += value;
+		_checksum += value;
 	}
 
 
@@ -167,9 +168,9 @@ public:
 	bool write(bool shortheaders)
 	{
 		atmheader atm;
-		atm.read(m_rawdata);
+		atm.read(_rawData);
 
-		BYTE* dataEnd = m_rawdata + atm.header.length;
+		BYTE* dataEnd = _rawData + atm.header.length;
 
 		int blockNum = 0;
 		int blockLoadAddr = atm.header.start;
@@ -192,7 +193,7 @@ public:
 				headerTime -= 3.3F;
 			}
 
-			m_checksum = 0;
+			_checksum = 0;
 
 			// Preamble
 			//
@@ -209,7 +210,7 @@ public:
 			}
 			outByte(0x0d);
 
-			int blockLen = int(dataEnd - m_rawdata);
+			int blockLen = int(dataEnd - _rawData);
 			if (blockLen < 257)
 			{
 				// flags.7 cleared to indicate last block
@@ -263,17 +264,17 @@ public:
 			//
 			for (int i = 0; i < blockLen; ++i)
 			{
-				outByte(m_rawdata[i]);
+				outByte(_rawData[i]);
 			}
 
 			// The checksum itself gets added to the internal count, but not
 			// until after it's written. It's reset again at the start of the
 			// loop. So go ahead, corrupt it all you like.
 			//
-			outByte(m_checksum);
+			outByte(_checksum);
 
 			blockLoadAddr+= 0x100;
-			m_rawdata += 0x100;
+			_rawData += 0x100;
 			++blockNum;
 
 			// flags.5 is clear on first block
@@ -296,9 +297,9 @@ public:
 	bool writeunnamed(bool shortheaders)
 	{
 		atmheader atm;
-		atm.read(m_rawdata);
+		atm.read(_rawData);
 
-		BYTE* dataEnd = m_rawdata + atm.header.length;
+		BYTE* dataEnd = _rawData + atm.header.length;
 
 		int blockLoadAddr = atm.header.start;
 		int blockEndAddr = blockLoadAddr + atm.header.length;
@@ -319,95 +320,120 @@ public:
 
 		for (int i = 0; i < atm.header.length; ++i)
 		{
-			outByte(m_rawdata[i]);
+			outByte(_rawData[i]);
 		}
 
 		return true;
 	}
 
 
-	short m_sine[147];
+	// NASTY HACK FOR WRITING WAVS. PLEASE LOOK AWAY NOW.
 
-	BYTE* m_rawdata;
+	void out32(int val)
+	{
+		char chars[4];
+		*(int*)chars = val;
+		_out << chars[0] << chars[1] << chars[2] << chars[3];
+	}
 
-	int m_writtenSampleCount;
+	void out16(short val)
+	{
+		char chars[2];
+		*(short*)chars = val;
+		_out << chars[0] << chars[1];
+	}
 
-	BYTE m_checksum;
+	void createWaveFile()
+	{
+		// chunk descriptor
+		_out << "RIFF";
+		out32(0);			// dummy chunk size, will be overwritten
+		_out << "WAVE";
 
-	std::ofstream& m_out;
+		// sub chunk descriptor
+		int BYTERATE = SAMPLERATE*(BITSPERSAMPLE / 8 * CHANNELS);
+		short BLOCKALIGN = BITSPERSAMPLE / 8 * CHANNELS;
+		_out << "fmt ";
+		out32(16);			// chunk size, bytes
+		out16(1);			// format, pcm uncompressed
+		out16(CHANNELS);
+		out32(SAMPLERATE);
+		out32(BYTERATE);
+		out16(BLOCKALIGN);		// block align
+		out16(BITSPERSAMPLE);
+
+		// chunk descriptor
+		_out << "data";
+		out32(0);			// dummy block length, will be overwritten
+	}
+
+
+	void finaliseWaveFile()
+	{
+		_out.seekp(40);
+		int bytesWrit = _writtenSampleCount * (_is8bit ? 1 : 2);
+		out32(bytesWrit);
+
+		_out.seekp(4);
+		out32(bytesWrit + 36);
+	}
+
+	// OK IT'S SAFE TO LOOK AGAIN
+
+	bool _is8bit;
+
+	short _sine[147];
+
+	BYTE* _rawData;
+
+	int _writtenSampleCount;
+
+	BYTE _checksum;
+
+	std::ofstream& _out;
+
+	static const int CHANNELS = 1;
+	static const int SAMPLERATE = 44100;
+	int BITSPERSAMPLE;
 };
 
 
-
-
-// NASTY HACK FOR WRITING WAVS. PLEASE LOOK AWAY NOW.
-
-static const int ENDIAN0 = 0;
-static const int ENDIAN1 = 1;
-static const int ENDIAN2 = 2;
-static const int ENDIAN3 = 3;
-
-static const int ENDIAN0_S = 0;
-static const int ENDIAN1_S = 1;
-
-static const int CHANNELS = 1;
-static const int SAMPLERATE = 44100;
-static const int BITSPERSAMPLE = 16;
-
-void CreateWaveFile(std::ostream& output)
+class freqout8 : public freqout
 {
-	char chars[4];
+public:
+	freqout8(BYTE* rawdata, std::ofstream& out) :
+		freqout(rawdata, out)
+	{
+		_is8bit = true;
+		BITSPERSAMPLE = 8;
+	}
 
-	output << "RIFF";
-	*(int*)chars = 16;
-	output << chars[0] << chars[1] << chars[2] << chars[3];
+	// Output a 1 bit, 8 cycles of 24khz
+	//
+	virtual void out1(void)
+	{
+		for (int i = 0; i < 147; ++i)
+		{
+			// Double step the table for a higher frequency
+			//
+			short val = _sine[(i * 2) % 147];
+			_out.put(val < 0 ? (unsigned char)0x40 : (unsigned char)0xc0);
+		}
+		_writtenSampleCount += 147;
+	}
 
-	output << "WAVE";
-	output << "fmt ";
-
-	*(int*)chars = 16;
-	output << chars[ENDIAN0] << chars[ENDIAN1] << chars[ENDIAN2] << chars[ENDIAN3];
-
-	*(short*)chars = 1;
-	output << chars[ENDIAN0_S] << chars[ENDIAN1_S];
-
-	*(short*)chars = CHANNELS;
-	output << chars[ENDIAN0_S] << chars[ENDIAN1_S];
-
-	*(int*)chars = SAMPLERATE;
-	output << chars[ENDIAN0] << chars[ENDIAN1] << chars[ENDIAN2] << chars[ENDIAN3];
-
-	*(int*)chars = (int)(SAMPLERATE*(BITSPERSAMPLE/8*CHANNELS));
-	output << chars[ENDIAN0] << chars[ENDIAN1] << chars[ENDIAN2] << chars[ENDIAN3];
-
-	*(short*)chars = (short)(BITSPERSAMPLE/8*CHANNELS);
-	output << chars[ENDIAN0_S] << chars[ENDIAN1_S];
-
-	*(short*)chars = (short)BITSPERSAMPLE;
-	output << chars[ENDIAN0_S] << chars[ENDIAN1_S];
-
-	output << "data";
-	*(int*)chars = 0;
-	output << chars[0] << chars[1] << chars[2] << chars[3];
-}
-
-
-void FinaliseWaveFile(std::ostream& output, size_t bytesWrit)
-{
-	char chars[4];
-
-	output.seekp(40);
-
-	*(int*)chars = (int)bytesWrit;
-	output << chars[ENDIAN0] << chars[ENDIAN1] << chars[ENDIAN2] << chars[ENDIAN3];
-
-	output.seekp(4);
-
-	*(int*)chars = (int)(bytesWrit + 36);
-	output << chars[ENDIAN0] << chars[ENDIAN1] << chars[ENDIAN2] << chars[ENDIAN3];
-}
-
-// OK IT'S SAFE TO LOOK AGAIN
+	// Output a 0 bit, 4 cycles of 12khz
+	//
+	virtual void out0(void)
+	{
+		for (int i = 0; i < 147; ++i)
+		{
+			short val = _sine[i];
+			_out.put(val < 0 ? (unsigned char)0x40 : (unsigned char)0xc0);
+		}
+		_writtenSampleCount += 147;
+	}
+};
 
 
 
@@ -419,7 +445,7 @@ int main(int argc, char** argv)
 
 	if (argc < 2 || param.ispresent("/?") || param.ispresent("-?") || param.ispresent("?"))
 	{
-		std::cout << "ATM2WAV V" << VERSION << std::endl;
+		std::cout << "ATM2WAV V" << VSNSTR << std::endl;
 		std::cout << std::endl;
 		std::cout << "Produces a WAV representing a cassette image of the supplied ATM." << std::endl;
 		std::cout << "WAV will be 44.1khz, 16 bit, mono." << std::endl;
@@ -430,6 +456,7 @@ int main(int argc, char** argv)
 		std::cerr << std::endl;
 		std::cerr << "out=     Output filename. Optional, defaults to <infile>.wav" << std::endl;
 		std::cerr << "unnamed  Save as unnamed file." << std::endl;
+		std::cerr << "8bit     Save as 8 bit unsigned WAV." << std::endl;
 		std::cout << "short    Short headers - 3 sec. instead of 5, reduced inter-block gap." << std::endl;
 		return 1;
 	}
@@ -475,28 +502,27 @@ int main(int argc, char** argv)
 	BYTE* rawdata = &byteBuffer.front();
 	in.read((char*)rawdata, (std::streamsize)byteBuffer.size());
 
-	freqout now(rawdata, out);
-
-	CreateWaveFile(out);
+	freqout* fo = param.ispresent("8bit") ? new freqout8(rawdata, out) : new freqout(rawdata, out);
+	fo->createWaveFile();
 
 	bool written;
 	if (param.ispresent("unnamed"))
 	{
-		written = now.writeunnamed(param.ispresent("short"));
+		written = fo->writeunnamed(param.ispresent("short"));
 	}
 	else
 	{
-		written = now.write(param.ispresent("short"));
+		written = fo->write(param.ispresent("short"));
 	}
 
 	if (!written)
 	{
 		std::cout << "Failed to write WAV." << std::endl;
-		unlink(outName.c_str());
+		_unlink(outName.c_str());
 		return 1;
 	}
 
-	FinaliseWaveFile(out, now.m_writtenSampleCount * 2);
+	fo->finaliseWaveFile();
 
 	std::cout << "Written Atom program to '" << outName.c_str() << "'." << std::endl;
 
